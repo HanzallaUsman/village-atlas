@@ -12,7 +12,7 @@
      so the interface doesn't change voice when the language toggles. -->
 <link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600&display=swap" rel="stylesheet">
 
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="src/styles.css">
 
 <script type="importmap">
 {
@@ -58,6 +58,37 @@
   <button id="sound-toggle" class="control" type="button">Sound on</button>
 </div>
 
+<!-- Falcon flight: launch button (right edge, shown while exploring) -->
+<button id="fly-toggle" class="control" type="button" hidden>
+  <span aria-hidden="true" class="fly-icon">⌇</span>
+  <span data-i18n="fly">Fly</span>
+</button>
+
+<!-- Falcon flight: in-game HUD, crosshair, and pause / game-over dialog -->
+<div id="flight-hud" hidden>
+  <div class="flight-stat">
+    <span class="flight-stat-label" data-i18n="flyTime">Time</span>
+    <span id="flight-time" class="flight-stat-val">0</span>
+  </div>
+  <div class="flight-stat">
+    <span class="flight-stat-label" data-i18n="flyScore">Score</span>
+    <span id="flight-score" class="flight-stat-val">0</span>
+  </div>
+</div>
+<p id="flight-hint" class="hint" data-i18n="flyHint" hidden></p>
+<div id="flight-crosshair" aria-hidden="true" hidden></div>
+<div id="flight-modal" hidden>
+  <div class="flight-dialog">
+    <p class="kicker" id="flight-modal-kicker"></p>
+    <h2 id="flight-modal-title"></h2>
+    <p id="flight-modal-msg"></p>
+    <div class="flight-actions">
+      <button id="flight-primary" class="control" type="button"></button>
+      <button id="flight-secondary" class="control" type="button"></button>
+    </div>
+  </div>
+</div>
+
 <!-- Landmark pins overlay -->
 <div id="pin-layer" aria-live="polite"></div>
 
@@ -87,6 +118,6 @@
 
 <noscript><p class="noscript">This site needs JavaScript to render the 3D terrain.</p></noscript>
 
-<script type="module" src="app.js"></script>
+<script type="module" src="src/app.js"></script>
 </body>
 </html>
