@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2c66a9">
+<title>Village Atlas — The Emirates from above</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Readex Pro: one family that carries both Arabic and Latin,
+     so the interface doesn't change voice when the language toggles. -->
+<link href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="styles.css">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+
+<!-- 3D canvas mounts here; the sky gradient is the page background behind it.
+     #bg-earth fades in over the sky when exploring, so beyond the terrain
+     edges the world reads as blurred earth, not blue sky. -->
+<div id="bg-earth" aria-hidden="true"></div>
+<div id="scene" aria-hidden="true"></div>
+<div id="vignette" aria-hidden="true"></div>
+
+<!-- Map-title cartouche, always present -->
+<header class="cartouche" id="brand">
+  <p class="kicker" data-i18n="kicker">The Emirates from above</p>
+  <h1 class="title" data-i18n="title">Village Atlas</h1>
+</header>
+
+<button id="lang-toggle" class="control" type="button" aria-label="Switch language">عربي</button>
+
+<!-- Landing: village index, styled as a map legend -->
+<nav id="landing" aria-label="Villages">
+  <p class="tagline" data-i18n="tagline">Select a village to descend through the clouds.</p>
+  <ol id="village-list" class="village-list"><!-- rows built from config.js --></ol>
+</nav>
+
+<!-- Explore HUD -->
+<div id="hud" hidden>
+  <button id="back" class="control" type="button">
+    <span aria-hidden="true" class="back-arrow">←</span>
+    <span data-i18n="back">Villages</span>
+  </button>
+  <p id="village-label" class="village-label"></p>
+  <p id="scroll-hint" class="hint" data-i18n="scrollHint" hidden>Scroll to descend</p>
+  <p id="move-hint" class="hint" data-i18n="moveHint" hidden>Drag to move · Scroll to zoom · Right-drag to rotate</p>
+  <button id="sound-toggle" class="control" type="button">Sound on</button>
+</div>
+
+<!-- Landmark pins overlay -->
+<div id="pin-layer" aria-live="polite"></div>
+
+<!-- Slide-in detail panel (landmarks + placed models) -->
+<aside id="detail" aria-hidden="true">
+  <button id="detail-back" class="detail-back" type="button">
+    <span aria-hidden="true" class="back-arrow">←</span>
+    <span data-i18n="backToMap">Back to map</span>
+  </button>
+  <p class="kicker" data-i18n="landmark">Landmark</p>
+  <h2 id="detail-title"></h2>
+  <div id="detail-hero"></div>
+  <p id="detail-body"></p>
+  <div class="strip-head">
+    <button id="strip-prev" class="strip-btn" type="button" aria-label="Previous">←</button>
+    <button id="strip-next" class="strip-btn" type="button" aria-label="Next">→</button>
+  </div>
+  <div id="detail-strip"></div>
+</aside>
+
+<p id="toast" role="status" hidden></p>
+
+<!-- Shown only when the page is opened as a file:// (no server) -->
+<div id="file-warning" hidden>
+  <p data-i18n="fileProtocol"></p>
+</div>
+
+<noscript><p class="noscript">This site needs JavaScript to render the 3D terrain.</p></noscript>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
