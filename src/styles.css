@@ -318,6 +318,12 @@ body {
    Falcon flight mini-game
    -------------------------------------------- */
 
+/* The `hidden` attribute must beat the display rules below, or these
+   would show on the landing page (same trap as #file-warning). */
+#fly-toggle[hidden],
+#flight-hud[hidden],
+#flight-modal[hidden] { display: none; }
+
 /* Launch button — pinned to the right edge, vertically centered */
 #fly-toggle {
   position: fixed;
