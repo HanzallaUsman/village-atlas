@@ -961,14 +961,15 @@ function applyLang() {
 const FLIGHT = {
   duration:    config.flight?.duration ?? 60,
   targetCount: config.flight?.targetCount ?? 7,
-  cruise:      640,               // forward speed, world units/sec
-  boost:       1150,              // while holding mouse / touch
+  cruise:      180,               // forward speed, world units/sec
+                                  // (~20s to cross Masfout's 3600-unit span)
+  boost:       330,               // while holding mouse / touch
   yawRate:     1.6,               // turn rate at full mouse deflection (rad/s)
   maxPitch:    0.52,              // climb / dive limit (rad)
   maxRoll:     0.7,               // cosmetic bank into turns (rad)
-  chaseDist:   135,               // camera distance behind the bird
-  chaseHeight: 48,                // camera lift above the bird
-  lookAhead:   220,               // camera aims this far ahead
+  chaseDist:   95,                // camera distance behind the bird
+  chaseHeight: 34,                // camera lift above the bird
+  lookAhead:   170,               // camera aims this far ahead
   follow:      4.5,               // camera catch-up rate
   catchRadius: 80,                // how close counts as a catch
   groundClear: 55,                // stay this far above the terrain
@@ -1032,6 +1033,7 @@ function buildPlaceholderBird() {
   const right = new THREE.Mesh(wingGeo, wingMat); right.position.x = 34;
   g.add(left, right);
   birdWings = [left, right];
+  g.scale.setScalar(0.45);                 // small bird
   return g;
 }
 
