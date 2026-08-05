@@ -321,6 +321,9 @@ body {
 /* The `hidden` attribute must beat the display rules below, or these
    would show on the landing page (same trap as #file-warning). */
 #fly-toggle[hidden],
+#head-toggle[hidden],
+#head-cam[hidden],
+#head-status[hidden],
 #flight-hud[hidden],
 #flight-modal[hidden] { display: none; }
 
@@ -337,6 +340,51 @@ body {
 }
 
 .fly-icon { font-size: 14px; transform: rotate(90deg); }
+
+/* Head-steer toggle — sits just under the Fly button on the right edge */
+#head-toggle {
+  position: fixed;
+  inset-block-start: calc(50% + 56px);
+  inset-inline-end: var(--s3);
+  transform: translateY(-50%);
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+#head-toggle.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.head-icon { font-size: 15px; }
+
+/* Small mirrored self-view so you can frame your face while steering */
+#head-cam {
+  position: fixed;
+  inset-block-end: var(--s3);
+  inset-inline-end: var(--s3);
+  width: 168px;
+  height: 126px;
+  object-fit: cover;
+  transform: scaleX(-1);           /* mirror, like a selfie cam */
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: #000;
+  box-shadow: 0 6px 22px rgba(0,0,0,.28);
+  z-index: 22;
+}
+
+/* Calibration / status message, centered below the HUD */
+#head-status {
+  position: fixed;
+  inset-block-start: calc(var(--s3) + 74px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 23;
+  padding: 6px 14px;
+  background: var(--panel);
+  border: 1px solid var(--hairline);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
 
 /* In-game HUD: Time + Score, stacked top-center */
 #flight-hud {

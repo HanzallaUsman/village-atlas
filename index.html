@@ -64,6 +64,14 @@
   <span data-i18n="fly">Fly</span>
 </button>
 
+<!-- Falcon flight: head-control toggle + webcam preview (opt-in) -->
+<button id="head-toggle" class="control" type="button" hidden>
+  <span aria-hidden="true" class="head-icon">🦅</span>
+  <span data-i18n="headOn">Head steer</span>
+</button>
+<video id="head-cam" playsinline muted aria-hidden="true" hidden></video>
+<p id="head-status" class="hint" role="status" hidden></p>
+
 <!-- Falcon flight: in-game HUD, crosshair, and pause / game-over dialog -->
 <div id="flight-hud" hidden>
   <div class="flight-stat">

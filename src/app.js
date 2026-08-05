@@ -961,9 +961,9 @@ function applyLang() {
 const FLIGHT = {
   duration:    config.flight?.duration ?? 60,
   targetCount: config.flight?.targetCount ?? 7,
-  cruise:      180,               // forward speed, world units/sec
-                                  // (~20s to cross Masfout's 3600-unit span)
-  boost:       330,               // while holding mouse / touch
+  cruise:      110,               // forward speed, world units/sec
+                                  // (~33s to cross Masfout's 3600-unit span)
+  boost:       210,               // while holding mouse / touch
   yawRate:     1.6,               // turn rate at full mouse deflection (rad/s)
   maxPitch:    0.52,              // climb / dive limit (rad)
   maxRoll:     0.7,               // cosmetic bank into turns (rad)
@@ -972,7 +972,7 @@ const FLIGHT = {
   lookAhead:   170,               // camera aims this far ahead
   follow:      4.5,               // camera catch-up rate
   catchRadius: 80,                // how close counts as a catch
-  groundClear: 55,                // stay this far above the terrain
+  groundClear: 12,                // let it skim right down to the terrain
   ceiling:     CENTER.y + 1500,   // altitude cap
   edgeMargin:  260,               // start curving back this far from bounds
 };
@@ -1002,6 +1002,8 @@ const bird = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0 };
 const flightGroup = new THREE.Group();
 let birdObj = null;
 let birdWings = [];
+let birdMixer = null;         // plays the model's own flap/glide clips
+let birdFlapAction = null;
 let flapT = 0;
 const targets = [];
 const flightMusic = makeAudio(config.sounds?.flightMusic, true);
@@ -1009,6 +1011,8 @@ const flightMusic = makeAudio(config.sounds?.flightMusic, true);
 const _dir = new THREE.Vector3();
 const _camPos = new THREE.Vector3();
 const _look = new THREE.Vector3();
+const _m4 = new THREE.Matrix4();          // decodes the head-pose matrix
+const _euler = new THREE.Euler(0, 0, 0, 'YXZ');
 
 // ----- placeholder bird (swapped for config.flight.model when set) -----
 
@@ -1054,6 +1058,17 @@ function buildBird() {
     birdObj.rotation.order = 'YXZ';
     birdObj.add(f);
     flightGroup.add(birdObj);
+
+    // Play the model's own wing animation (falls back to the geometric
+    // flap driven in the tick when the model has no clips). Prefer a
+    // "Flap" clip; otherwise use whatever the first clip is.
+    const clips = gltf.animations || [];
+    if (clips.length) {
+      birdMixer = new THREE.AnimationMixer(f);
+      const flap = clips.find((c) => /flap/i.test(c.name)) || clips[0];
+      birdFlapAction = birdMixer.clipAction(flap);
+      birdFlapAction.play();
+    }
   }, undefined, (err) => console.warn('Falcon model failed to load; using placeholder', err));
 }
 
@@ -1134,6 +1149,10 @@ function setFlightClock() {
 }
 
 function updateFlight(dt) {
+  // when head-steering is live and calibrated, it drives the same
+  // -1..1 steering values the mouse would (see head-control block below).
+  if (head.active && head.neutral) { mouse.x = head.target.x; mouse.y = head.target.y; }
+
   // steer: mouse right → turn right, mouse toward top → dive.
   // (chase cam looks +Z, so screen-right is world -X → yaw decreases.
   //  If steering ever feels mirrored, flip this - to a +.)
@@ -1173,6 +1192,7 @@ function updateFlight(dt) {
   flapT += dt * (boosting ? 17 : 11);
   const a = Math.sin(flapT) * 0.5;
   if (birdWings.length) { birdWings[0].rotation.z = a; birdWings[1].rotation.z = -a; }
+  if (birdMixer) { birdMixer.timeScale = boosting ? 1.6 : 1; birdMixer.update(dt); }
 
   // third-person chase camera (smoothed)
   _camPos.copy(bird.pos).addScaledVector(_dir, -FLIGHT.chaseDist);
@@ -1253,6 +1273,7 @@ function enterFlight() {
   flightHud.hidden = false;
   flightCrosshair.hidden = false;
   flightModal.hidden = true;
+  headToggle.hidden = false;
   renderer.domElement.classList.add('flying');
 
   birdsDown();
@@ -1270,6 +1291,8 @@ function leaveFlight() {
   flightHud.hidden = true;
   flightCrosshair.hidden = true;
   flightHint.hidden = true;
+  headToggle.hidden = true;
+  disableHead();                 // release the webcam when leaving flight
   modalKind = null;
   renderer.domElement.classList.remove('flying');
   if (flightMusic) fadeAudio(flightMusic, 0, 0.6);
@@ -1286,11 +1309,25 @@ function leaveFlight() {
   birdsUp();
 }
 
+function startFlightWith(mode) {
+  flightModal.hidden = true;
+  modalKind = null;
+  enterFlight();
+  if (mode === 'head') enableHead();
+}
+
 function showModal(kind) {
   modalKind = kind;
   const s = S();
   flightModalKicker.textContent = s.flyKicker;
-  if (kind === 'pause') {
+  if (kind === 'choose') {
+    flightModalTitle.textContent = s.flyChooseTitle;
+    flightModalMsg.textContent = s.flyChooseMsg;
+    flightPrimary.textContent = s.flyChooseHead;
+    flightSecondary.textContent = s.flyChooseMouse;
+    flightPrimary.onclick = () => startFlightWith('head');
+    flightSecondary.onclick = () => startFlightWith('mouse');
+  } else if (kind === 'pause') {
     flightModalTitle.textContent = s.flyPauseTitle;
     flightModalMsg.textContent = s.flyPauseMsg;
     flightPrimary.textContent = s.flyResume;
@@ -1332,10 +1369,10 @@ function flightGameOver() {
 
 // ----- flight input -----
 
-flyToggle.addEventListener('click', enterFlight);
+flyToggle.addEventListener('click', () => { if (state === 'free') showModal('choose'); });
 
 addEventListener('pointermove', (e) => {
-  if (state !== 'flying') return;
+  if (state !== 'flying' || head.active) return;   // head steering owns the input while on
   mouse.x = (e.clientX / innerWidth) * 2 - 1;
   mouse.y = (e.clientY / innerHeight) * 2 - 1;
 });
@@ -1349,7 +1386,7 @@ renderer.domElement.addEventListener('touchstart', (e) => {
   if (!flightPaused && !flightOver) boosting = true;
 }, { passive: true });
 addEventListener('touchmove', (e) => {
-  if (state !== 'flying' || !e.touches[0]) return;
+  if (state !== 'flying' || head.active || !e.touches[0]) return;
   mouse.x = (e.touches[0].clientX / innerWidth) * 2 - 1;
   mouse.y = (e.touches[0].clientY / innerHeight) * 2 - 1;
 }, { passive: true });
@@ -1360,6 +1397,176 @@ addEventListener('keydown', (e) => {
   e.preventDefault();
   if (flightOver) return;
   if (flightPaused) resumeFlight(); else pauseFlight();
+});
+
+// ------------------------------------------------------------
+//  Head-pose control (opt-in webcam steering)
+//  Turn your head to steer, open your mouth to dive/boost. Everything
+//  funnels into the same mouse.x/y + boosting the mouse path uses, so
+//  the pointer stays a live fallback and this can't break it.
+//  Uses MediaPipe Tasks-Vision (on-device, loaded lazily from CDN).
+// ------------------------------------------------------------
+
+const headToggle = document.getElementById('head-toggle');
+const headCam = document.getElementById('head-cam');
+const headStatus = document.getElementById('head-status');
+const headLabel = headToggle.querySelector('[data-i18n]');
+
+const HEAD = {
+  yawRange:   0.42,   // radians of head-turn that maps to full steer
+  pitchRange: 0.34,   // radians of nod that maps to full dive/climb
+  deadzone:   0.09,   // ignore tiny wobble around neutral
+  smooth:     0.28,   // EMA toward the new reading each detect (0..1)
+  jawBoost:   0.40,   // mouth-open blendshape score that triggers boost
+  invertYaw:  true,   // turn head left → fly left (raw pose yaw is inverted)
+  invertPitch:true,   // face up → fly up (raw pose pitch is inverted)
+  calibFrames:18,     // ~1s of "hold still" to capture the neutral pose
+};
+
+const head = {
+  active: false, loading: false,
+  landmarker: null, stream: null, raf: 0,
+  lastVideoTime: -1,
+  neutral: null,            // { yaw, pitch } captured at calibration
+  calib: [], calibrating: false,
+  target: { x: 0, y: 0 },   // smoothed steering handed to the flight tick
+};
+
+function setHeadStatus(msg) {
+  if (!msg) { headStatus.hidden = true; return; }
+  headStatus.textContent = msg;
+  headStatus.hidden = false;
+}
+
+async function loadFaceLandmarker() {
+  const V = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14';
+  const { FaceLandmarker, FilesetResolver } = await import(V);
+  const fileset = await FilesetResolver.forVisionTasks(`${V}/wasm`);
+  return FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: {
+      modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+    },
+    runningMode: 'VIDEO',
+    numFaces: 1,
+    outputFaceBlendshapes: true,
+    outputFacialTransformationMatrixes: true,
+  });
+}
+
+async function enableHead() {
+  if (head.active || head.loading) return;
+  head.loading = true;
+  setHeadStatus(S().headLoading);
+  try {
+    if (!head.landmarker) head.landmarker = await loadFaceLandmarker();
+    head.stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 320, height: 240, facingMode: 'user' }, audio: false,
+    });
+    headCam.srcObject = head.stream;
+    await headCam.play();
+    head.active = true;
+    headCam.hidden = false;
+    headToggle.classList.add('on');
+    if (headLabel) headLabel.textContent = S().headOff;
+    startCalibration();
+    head.raf = requestAnimationFrame(headLoop);
+  } catch (err) {
+    console.warn('Head control unavailable', err);
+    const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+    setHeadStatus(denied ? S().headDenied : S().headUnsupported);
+    disableHead(true);
+  } finally {
+    head.loading = false;
+  }
+}
+
+// keepMsg: leave any error status on screen (used by the failure path)
+function disableHead(keepMsg) {
+  head.active = false;
+  head.calibrating = false;
+  head.neutral = null;
+  head.target.x = 0; head.target.y = 0;
+  head.lastVideoTime = -1;
+  if (head.raf) { cancelAnimationFrame(head.raf); head.raf = 0; }
+  if (head.stream) { head.stream.getTracks().forEach((t) => t.stop()); head.stream = null; }
+  headCam.srcObject = null;
+  headCam.hidden = true;
+  headToggle.classList.remove('on');
+  if (headLabel) headLabel.textContent = S().headOn;
+  if (!keepMsg) setHeadStatus('');
+}
+
+function startCalibration() {
+  head.calibrating = true;
+  head.calib.length = 0;
+  head.neutral = null;
+  setHeadStatus(S().headCalib);
+}
+
+function headLoop() {
+  if (!head.active) return;
+  head.raf = requestAnimationFrame(headLoop);
+  const lm = head.landmarker;
+  if (!lm || headCam.readyState < 2) return;
+  // only run detection on a fresh camera frame (keeps three.js at 60fps)
+  if (headCam.currentTime === head.lastVideoTime) return;
+  head.lastVideoTime = headCam.currentTime;
+
+  let res;
+  try { res = lm.detectForVideo(headCam, performance.now()); }
+  catch { return; }
+
+  const mtx = res.facialTransformationMatrixes && res.facialTransformationMatrixes[0];
+  if (!mtx) { if (!head.calibrating) setHeadStatus(S().headNoFace); return; }
+
+  // decode head yaw (Y) and pitch (X) from the 4x4 pose matrix
+  _m4.fromArray(mtx.data);
+  _euler.setFromRotationMatrix(_m4, 'YXZ');
+  const yaw = _euler.y, pitch = _euler.x;
+
+  if (head.calibrating) {
+    head.calib.push([yaw, pitch]);
+    if (head.calib.length >= HEAD.calibFrames) {
+      const n = head.calib.length;
+      head.neutral = {
+        yaw:   head.calib.reduce((s, v) => s + v[0], 0) / n,
+        pitch: head.calib.reduce((s, v) => s + v[1], 0) / n,
+      };
+      head.calibrating = false;
+      setHeadStatus(S().headReady);
+      setTimeout(() => { if (head.active && !head.calibrating) setHeadStatus(''); }, 3200);
+    }
+    return;
+  }
+  if (!head.neutral) return;
+
+  let sx = (yaw - head.neutral.yaw) / HEAD.yawRange;
+  let sy = (pitch - head.neutral.pitch) / HEAD.pitchRange;
+  if (HEAD.invertYaw)   sx = -sx;
+  if (HEAD.invertPitch) sy = -sy;
+  sx = shapeAxis(sx);
+  sy = shapeAxis(sy);
+  head.target.x += (sx - head.target.x) * HEAD.smooth;
+  head.target.y += (sy - head.target.y) * HEAD.smooth;
+
+  // mouth-open → dive boost
+  const bs = res.faceBlendshapes && res.faceBlendshapes[0];
+  if (bs && !flightPaused && !flightOver) {
+    const jaw = bs.categories.find((c) => c.categoryName === 'jawOpen');
+    boosting = !!(jaw && jaw.score > HEAD.jawBoost);
+  }
+}
+
+// deadzone + rescale + clamp to a clean -1..1
+function shapeAxis(v) {
+  const d = HEAD.deadzone;
+  if (Math.abs(v) < d) return 0;
+  v = (v - Math.sign(v) * d) / (1 - d);
+  return Math.max(-1, Math.min(1, v));
+}
+
+headToggle.addEventListener('click', () => {
+  if (head.active || head.loading) disableHead(); else enableHead();
 });
 
 // ----- file:// guard -----

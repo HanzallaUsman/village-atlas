@@ -32,9 +32,9 @@ export const config = {
   flight: {
     // Your falcon model: drop the .glb in assets/models/ and set it
     // here. Until then a simple placeholder bird is used.
-    model: null,            // e.g. 'assets/models/falcon.glb'
+    model: 'assets/models/peregrine-falcon.glb',
     modelScale: 40,         // tune so the falcon reads from the chase cam
-    modelRotationY: 0,      // radians — rotate if the falcon faces wrong
+    modelRotationY: Math.PI, // radians — model faces -Z, so spin 180° to fly forward
     duration: 60,           // seconds per run
     targetCount: 7,         // birds in the air at once
   },
@@ -186,6 +186,20 @@ export const config = {
       flyOverMsg: 'birds caught',
       flyAgain: 'Fly again',
       flyDone: 'Back to map',
+      // How-to-steer chooser (shown when you press Fly)
+      flyChooseTitle: 'How do you want to steer?',
+      flyChooseMsg: 'Head steering uses your webcam — turn your head to fly, open your mouth to dive. You can switch or turn it off anytime.',
+      flyChooseHead: 'Head',
+      flyChooseMouse: 'Mouse',
+      // Head-pose control (opt-in webcam steering)
+      headOn: 'Head steer',
+      headOff: 'Head steer: on',
+      headLoading: 'Starting camera…',
+      headCalib: 'Look straight ahead and hold still…',
+      headReady: 'Turn your head to steer · Open your mouth to dive',
+      headNoFace: 'Move into frame — no face detected',
+      headDenied: 'Camera blocked. Allow it in your browser to steer with your head.',
+      headUnsupported: 'Head steering isn’t available on this device.',
     },
     ar: {
       kicker: 'الإمارات من الأعلى',
@@ -221,6 +235,20 @@ export const config = {
       flyOverMsg: 'طائر تم اصطياده',
       flyAgain: 'طيران مرة أخرى',
       flyDone: 'العودة إلى الخريطة',
+      // How-to-steer chooser (shown when you press Fly)
+      flyChooseTitle: 'كيف تريد التوجيه؟',
+      flyChooseMsg: 'يستخدم التوجيه بالرأس الكاميرا — أدر رأسك للطيران، وافتح فمك للانقضاض. يمكنك التبديل أو الإيقاف في أي وقت.',
+      flyChooseHead: 'الرأس',
+      flyChooseMouse: 'الفأرة',
+      // Head-pose control (opt-in webcam steering)
+      headOn: 'التوجيه بالرأس',
+      headOff: 'التوجيه بالرأس: مُفعّل',
+      headLoading: 'جارٍ تشغيل الكاميرا…',
+      headCalib: 'انظر إلى الأمام مباشرةً وابقَ ثابتاً…',
+      headReady: 'أدر رأسك للتوجيه · افتح فمك للانقضاض',
+      headNoFace: 'ادخل ضمن الإطار — لم يتم اكتشاف وجه',
+      headDenied: 'الكاميرا محظورة. اسمح بها في المتصفح للتوجيه بالرأس.',
+      headUnsupported: 'التوجيه بالرأس غير متاح على هذا الجهاز.',
     },
   },
 };
