@@ -315,6 +315,7 @@ function loadTerrain() {
       snapPins();
       loadModels();
       updateVillageRows();
+      raceDevInit();
       if (state === 'pending') beginReveal();
     },
     (e) => {
@@ -441,6 +442,7 @@ function enterFree() {
   setTimeout(() => moveHint.classList.add('fade'), 5000);
   pinLayer.hidden = false;
   flyToggle.hidden = false;
+  raceToggle.hidden = !hasRaceRoute;
   birdsUp();
 }
 
@@ -516,6 +518,7 @@ function returnToClouds() {
   hud.hidden = true;
   pinLayer.hidden = true;
   flyToggle.hidden = true;
+  raceToggle.hidden = true;
   closeDetail(false);
   birdsDown();
   cloudGroup.visible = true;
@@ -903,6 +906,13 @@ function showToast(msg) {
     );
     raycaster.setFromCamera(ndc, camera);
 
+    // admin route-draw mode owns the click: drop a waypoint on the ground
+    if (raceDraw.active) {
+      const g = raycaster.intersectObjects(terrainMeshes, false)[0];
+      if (g) addRoutePoint(g.point);
+      return;
+    }
+
     // placed 3D models first
     const modelHit = raycaster.intersectObjects(modelMeshes, false)[0];
     if (modelHit && modelHit.object.userData.detail?.title) {
@@ -1002,8 +1012,9 @@ const bird = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, roll: 0 };
 const flightGroup = new THREE.Group();
 let birdObj = null;
 let birdWings = [];
-let birdMixer = null;         // plays the model's own flap/glide clips
-let birdFlapAction = null;
+let birdMixer = null;         // plays the model's own flap/glide/dive clips
+let birdActions = {};         // { flap, glide, dive } → AnimationAction
+let birdActive = null;        // name of the clip currently faded in
 let flapT = 0;
 const targets = [];
 const flightMusic = makeAudio(config.sounds?.flightMusic, true);
@@ -1060,16 +1071,37 @@ function buildBird() {
     flightGroup.add(birdObj);
 
     // Play the model's own wing animation (falls back to the geometric
-    // flap driven in the tick when the model has no clips). Prefer a
-    // "Flap" clip; otherwise use whatever the first clip is.
+    // flap driven in the tick when the model has no clips). We sort the
+    // clips into flap / glide / dive so the tick can cross-fade between
+    // them — dive kicks in while boosting.
     const clips = gltf.animations || [];
     if (clips.length) {
       birdMixer = new THREE.AnimationMixer(f);
-      const flap = clips.find((c) => /flap/i.test(c.name)) || clips[0];
-      birdFlapAction = birdMixer.clipAction(flap);
-      birdFlapAction.play();
+      birdActions = {};
+      for (const c of clips) {
+        const key = /dive/i.test(c.name) ? 'dive'
+                  : /glide/i.test(c.name) ? 'glide'
+                  : /flap/i.test(c.name) ? 'flap' : null;
+        if (key && !birdActions[key]) birdActions[key] = birdMixer.clipAction(c);
+      }
+      if (!birdActions.flap) birdActions.flap = birdMixer.clipAction(clips[0]);
+      birdActive = null;
+      setBirdClip('flap', 0);      // start flapping immediately
     }
   }, undefined, (err) => console.warn('Falcon model failed to load; using placeholder', err));
+}
+
+// Cross-fade the model to a named clip (flap / glide / dive). No-op when
+// the model has no clips, the clip is missing, or it's already active.
+function setBirdClip(name, fade = 0.3) {
+  if (!birdMixer) return;
+  const next = birdActions[name];
+  if (!next || birdActive === name) return;
+  next.enabled = true;
+  next.setEffectiveWeight(1).reset().fadeIn(fade).play();
+  const prev = birdActive && birdActions[birdActive];
+  if (prev) prev.fadeOut(fade);
+  birdActive = name;
 }
 
 // ----- target birds (canvas silhouette sprites) -----
@@ -1192,7 +1224,12 @@ function updateFlight(dt) {
   flapT += dt * (boosting ? 17 : 11);
   const a = Math.sin(flapT) * 0.5;
   if (birdWings.length) { birdWings[0].rotation.z = a; birdWings[1].rotation.z = -a; }
-  if (birdMixer) { birdMixer.timeScale = boosting ? 1.6 : 1; birdMixer.update(dt); }
+  if (birdMixer) {
+    // boost → dive tuck; otherwise flap (fall back to flap if no dive clip)
+    setBirdClip(boosting && birdActions.dive ? 'dive' : 'flap');
+    birdMixer.timeScale = boosting ? 1.2 : 1;
+    birdMixer.update(dt);
+  }
 
   // third-person chase camera (smoothed)
   _camPos.copy(bird.pos).addScaledVector(_dir, -FLIGHT.chaseDist);
@@ -1257,6 +1294,7 @@ function startRun() {
 
 function enterFlight() {
   if (state !== 'free') return;
+  if (raceDraw.active) setDrawMode(false);
   closeDetail(false);
   state = 'flying';
   if (!birdObj) buildBird();
@@ -1267,6 +1305,7 @@ function enterFlight() {
   hud.hidden = true;
   pinLayer.hidden = true;
   flyToggle.hidden = true;
+  raceToggle.hidden = true;
   scrollHint.hidden = true;
   moveHint.hidden = true;
 
@@ -1306,6 +1345,7 @@ function leaveFlight() {
   hud.hidden = false;
   pinLayer.hidden = false;
   flyToggle.hidden = false;
+  raceToggle.hidden = !hasRaceRoute;
   birdsUp();
 }
 
@@ -1569,6 +1609,472 @@ headToggle.addEventListener('click', () => {
   if (head.active || head.loading) disableHead(); else enableHead();
 });
 
+// ------------------------------------------------------------
+//  Cycling route — admin draw + export tool (?dev only)
+//  Click along the terrain to lay waypoints; a ribbon previews the
+//  route hugging the ground. Export copies JSON ready to paste into
+//  config.villages[…].race.route. Heights snap via groundHeight().
+// ------------------------------------------------------------
+
+const raceDraw = {
+  active: false,
+  points: [],                 // [{ x, z }, …]
+  group: new THREE.Group(),
+  markers: [],
+  ribbon: null,
+  panel: null,
+  drawBtn: null,
+  drawingEl: null,
+  statusEl: null,
+};
+
+const _routeMarkerGeo = new THREE.SphereGeometry(7, 12, 10);
+const _routeMarkerMat = new THREE.MeshBasicMaterial({ color: 0xffd34d });
+const _routeStartMat  = new THREE.MeshBasicMaterial({ color: 0x4fd07a });
+const _routeEndMat    = new THREE.MeshBasicMaterial({ color: 0xe8543f });
+
+// Smooth curve through the waypoints (flat; y is snapped per-sample).
+function routeCurve(points) {
+  if (points.length < 2) return null;
+  const pts = points.map((p) => new THREE.Vector3(p.x, 0, p.z));
+  return new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+}
+
+// A ground-hugging ribbon along the route. Reused by the ride later.
+function buildRouteRibbon(points, { width = 26, color = 0xffd34d, opacity = 0.5, offset = 3 } = {}) {
+  const curve = routeCurve(points);
+  if (!curve) return null;
+  const N = Math.min(1200, Math.max(24, points.length * 20));
+  const half = width / 2;
+  const up = new THREE.Vector3(0, 1, 0);
+  const tan = new THREE.Vector3(), side = new THREE.Vector3(), p = new THREE.Vector3();
+  const pos = [], idx = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    curve.getPoint(t, p);
+    curve.getTangent(t, tan); tan.y = 0; tan.normalize();
+    side.crossVectors(up, tan).normalize();
+    const y = groundHeight(p.x, p.z) + offset;
+    pos.push(p.x + side.x * half, y, p.z + side.z * half,
+             p.x - side.x * half, y, p.z - side.z * half);
+    if (i < N) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  const mat = new THREE.MeshBasicMaterial({
+    color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function addRoutePoint(point) {
+  raceDraw.points.push({ x: +point.x.toFixed(1), z: +point.z.toFixed(1) });
+  refreshRouteVisual();
+}
+function undoRoutePoint() { raceDraw.points.pop(); refreshRouteVisual(); }
+function clearRoute() { raceDraw.points.length = 0; refreshRouteVisual(); }
+
+function refreshRouteVisual() {
+  for (const m of raceDraw.markers) raceDraw.group.remove(m);
+  raceDraw.markers.length = 0;
+  if (raceDraw.ribbon) {
+    raceDraw.group.remove(raceDraw.ribbon);
+    raceDraw.ribbon.geometry.dispose();
+    raceDraw.ribbon = null;
+  }
+  raceDraw.points.forEach((pt, i) => {
+    const mat = i === 0 ? _routeStartMat
+              : i === raceDraw.points.length - 1 ? _routeEndMat
+              : _routeMarkerMat;
+    const m = new THREE.Mesh(_routeMarkerGeo, mat);
+    m.position.set(pt.x, groundHeight(pt.x, pt.z) + 7, pt.z);
+    raceDraw.group.add(m);
+    raceDraw.markers.push(m);
+  });
+  if (raceDraw.points.length >= 2) {
+    raceDraw.ribbon = buildRouteRibbon(raceDraw.points);
+    if (raceDraw.ribbon) raceDraw.group.add(raceDraw.ribbon);
+  }
+  if (raceDraw.statusEl) raceDraw.statusEl.textContent = `${raceDraw.points.length} point${raceDraw.points.length === 1 ? '' : 's'}`;
+}
+
+function exportRoute() {
+  if (!raceDraw.points.length) { showToast('Draw a route first'); return; }
+  const json = JSON.stringify(raceDraw.points);
+  console.log('[race route] paste into config race.route:\n' + json);
+  navigator.clipboard?.writeText(json).catch(() => {});
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `race-route-${village.id}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch { /* download optional */ }
+  showToast(`Route copied — ${raceDraw.points.length} pts`);
+}
+
+// Admin panel (bottom-left): an "Admin" button that expands to reveal
+// tools. "Draw route" enters draw mode; while drawing, the panel shows
+// point count + Undo / Clear / Export / Done.
+function buildAdminPanel() {
+  const wrap = document.createElement('div');
+  wrap.className = 'admin-panel';
+  wrap.innerHTML =
+    '<button type="button" class="control admin-toggle">Admin ▾</button>' +
+    '<div class="admin-menu" hidden>' +
+      '<button type="button" class="control admin-draw">✏️ Draw route</button>' +
+      '<div class="admin-drawing" hidden>' +
+        '<span class="admin-count">0 points</span>' +
+        '<span class="admin-hint">Click the terrain to drop points</span>' +
+        '<div class="admin-row">' +
+          '<button type="button" class="control" data-act="undo">Undo</button>' +
+          '<button type="button" class="control" data-act="clear">Clear</button>' +
+          '<button type="button" class="control" data-act="done">Done</button>' +
+        '</div>' +
+        '<button type="button" class="control admin-export" data-act="export">⬇ Export route</button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(wrap);
+  const menu = wrap.querySelector('.admin-menu');
+  raceDraw.panel = wrap;
+  raceDraw.drawBtn = wrap.querySelector('.admin-draw');
+  raceDraw.drawingEl = wrap.querySelector('.admin-drawing');
+  raceDraw.statusEl = wrap.querySelector('.admin-count');
+
+  wrap.querySelector('.admin-toggle').addEventListener('click', () => { menu.hidden = !menu.hidden; });
+  raceDraw.drawBtn.addEventListener('click', () => setDrawMode(true));
+  raceDraw.drawingEl.addEventListener('click', (e) => {
+    const act = e.target instanceof HTMLElement ? e.target.dataset.act : null;
+    if (act === 'undo') undoRoutePoint();
+    else if (act === 'clear') clearRoute();
+    else if (act === 'export') exportRoute();
+    else if (act === 'done') setDrawMode(false);
+  });
+}
+
+function setDrawMode(on) {
+  raceDraw.active = on;
+  raceDraw.group.visible = on;                 // markers/ribbon only while drawing
+  if (raceDraw.drawingEl) raceDraw.drawingEl.hidden = !on;
+  if (raceDraw.drawBtn) raceDraw.drawBtn.hidden = on;   // hide "Draw route" while drawing
+  // pan stays on: a click (<7px) drops a point, a drag pans the map
+}
+
+// Called once the terrain is ready (groundHeight needs the mesh).
+function raceDevInit() {
+  scene.add(raceDraw.group);
+  raceDraw.group.visible = false;              // hidden until Draw mode is on
+  const saved = village.race?.route;
+  if (Array.isArray(saved) && saved.length) {
+    raceDraw.points = saved.map((p) => ({ x: p.x, z: p.z }));
+  }
+  refreshRouteVisual();
+}
+
+if (DEV) buildAdminPanel();     // admin tools only in ?dev
+
+// ------------------------------------------------------------
+//  Cycling time-trial race
+//  A box "bike" (swap for config race.bike) rides the drawn route.
+//  Tap SPACE / click to pedal — cadence sets speed, terrain slope
+//  helps or fights you. Reach the finish fast; best time is saved.
+// ------------------------------------------------------------
+
+const RACE = {
+  chaseDist:  70, chaseHeight: 32, lookAhead: 120, follow: 3.2,
+  camTurn:    2.0,     // how fast the chase cam re-aims (lower = smoother)
+  maxSpeed:   60,      // world units/sec at full cadence, flat ground
+  pedalGain:  0.144,   // base power per pedal tap (diminishing near the top)
+  decay:      0.50,    // power lost per second between taps
+  slopeK:     2.4,     // how strongly grade helps (down) / hurts (up)
+  groundOffset: 1,
+};
+
+const raceToggle = document.getElementById('race-toggle');
+const raceHud = document.getElementById('race-hud');
+const raceHint = document.getElementById('race-hint');
+const raceTimeEl = document.getElementById('race-time');
+const raceProgressEl = document.getElementById('race-progress');
+const raceBestEl = document.getElementById('race-best');
+const raceControls = document.getElementById('race-controls');
+const raceMeterFill = document.getElementById('race-meter-fill');
+const racePedal = document.getElementById('race-pedal');
+
+const raceGroup = new THREE.Group();
+let bikeObj = null, bikeMixer = null, raceTrack = null;
+let raceCurve = null, raceLen = 0;
+let raceDist = 0, racePower = 0, raceElapsed = 0;
+let raceStarted = false, raceFinished = false;
+
+const _rp = new THREE.Vector3(), _rpA = new THREE.Vector3();
+const _rtan = new THREE.Vector3(), _rcam = new THREE.Vector3();
+const _rcamdir = new THREE.Vector3(0, 0, 1);   // smoothed chase heading
+
+// Rival bot cyclists: each rides the route in its own lateral lane (so
+// they never overlap) at a steady, slightly varied speed. Lanes stay
+// well inside the track ribbon (±15) so they never leave the road.
+const BOT_COUNT = 2;
+const BOT_COLORS = [0x3aa0ff, 0xff6ba6];
+const BOT_SPEEDS = [34, 46];                   // world units/sec, varied
+const BOT_LANES = [-7, 7];                      // player rides lane 0 (center)
+const bots = [];
+const _bp = new THREE.Vector3(), _btan = new THREE.Vector3(), _bside = new THREE.Vector3();
+const _UP = new THREE.Vector3(0, 1, 0);
+
+const hasRaceRoute = Array.isArray(village.race?.route) && village.race.route.length >= 2;
+
+function buildBikePlaceholder(color = 0xff7a1a) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(16, 14, 34),
+    new THREE.MeshBasicMaterial({ color }));
+  body.position.y = 7;
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(11, 9, 10),
+    new THREE.MeshBasicMaterial({ color: 0x1c1c1c }));
+  nose.position.set(0, 9, 19);   // dark block marks the front (+Z)
+  g.add(body, nose);
+  g.scale.setScalar(0.175);      // tiny placeholder "bike"
+  g.rotation.order = 'YXZ';
+  return g;
+}
+
+function buildBike() {
+  bikeObj = buildBikePlaceholder();
+  bikeObj.rotation.order = 'YXZ';
+  raceGroup.add(bikeObj);
+  const path = village.race?.bike;
+  if (!path) return;
+  gltfLoader.load(path, (gltf) => {
+    const f = gltf.scene;
+    f.scale.setScalar(village.race?.bikeScale ?? 40);
+    f.rotation.y = village.race?.bikeRotationY ?? 0;
+    raceGroup.remove(bikeObj);
+    bikeObj = new THREE.Group();
+    bikeObj.rotation.order = 'YXZ';
+    bikeObj.add(f);
+    raceGroup.add(bikeObj);
+    if (gltf.animations?.length) {
+      bikeMixer = new THREE.AnimationMixer(f);
+      bikeMixer.clipAction(gltf.animations[0]).play();
+    }
+  }, undefined, (err) => console.warn('Bike model failed to load; using box', err));
+}
+
+function buildBots() {
+  for (const b of bots) raceGroup.remove(b.obj);
+  bots.length = 0;
+  for (let i = 0; i < BOT_COUNT; i++) {
+    const obj = buildBikePlaceholder(BOT_COLORS[i % BOT_COLORS.length]);
+    raceGroup.add(obj);
+    bots.push({ obj, dist: 0, speed: BOT_SPEEDS[i], lane: BOT_LANES[i] });
+  }
+}
+
+// Pose a bot on the route at its arc-length + lateral lane offset.
+function poseBotAt(bot) {
+  const u = Math.min(1, Math.max(0, bot.dist / Math.max(1, raceLen)));
+  raceCurve.getPointAt(u, _bp);
+  raceCurve.getTangentAt(Math.min(0.999, u), _btan);
+  _btan.y = 0; _btan.normalize();
+  _bside.crossVectors(_UP, _btan).normalize();
+  const x = _bp.x + _bside.x * bot.lane;
+  const z = _bp.z + _bside.z * bot.lane;
+  const y = groundHeight(x, z) + RACE.groundOffset;
+  bot.obj.position.set(x, y, z);
+  bot.obj.rotation.set(0, Math.atan2(_btan.x, _btan.z), 0);
+}
+
+// Pose the bike at arc-length fraction u; returns the local grade.
+function poseBikeAt(u) {
+  u = Math.min(1, Math.max(0, u));
+  raceCurve.getPointAt(u, _rp);
+  raceCurve.getTangentAt(Math.min(0.999, u), _rtan);
+  _rtan.y = 0; _rtan.normalize();
+  const gy = groundHeight(_rp.x, _rp.z) + RACE.groundOffset;
+  const uA = Math.min(1, u + 10 / Math.max(1, raceLen));
+  raceCurve.getPointAt(uA, _rpA);
+  const gyA = groundHeight(_rpA.x, _rpA.z);
+  const horiz = Math.hypot(_rpA.x - _rp.x, _rpA.z - _rp.z) || 1;
+  const grade = (gyA - gy) / horiz;
+  bikeObj.position.set(_rp.x, gy, _rp.z);
+  bikeObj.rotation.set(-Math.atan(grade), Math.atan2(_rtan.x, _rtan.z), 0);
+  return grade;
+}
+
+function updateRaceCam(dt) {
+  // ease the chase heading toward the path tangent so the camera never
+  // snaps around on sharp corners
+  _rcamdir.lerp(_rtan, Math.min(1, dt * RACE.camTurn));
+  if (_rcamdir.lengthSq() < 1e-4) _rcamdir.copy(_rtan);
+  _rcamdir.y = 0; _rcamdir.normalize();
+
+  _rcam.copy(bikeObj.position).addScaledVector(_rcamdir, -RACE.chaseDist);
+  _rcam.y += RACE.chaseHeight;
+  camera.position.lerp(_rcam, Math.min(1, dt * RACE.follow));
+  camera.lookAt(
+    bikeObj.position.x + _rcamdir.x * RACE.lookAhead,
+    bikeObj.position.y + 8,
+    bikeObj.position.z + _rcamdir.z * RACE.lookAhead,
+  );
+}
+
+function pedal() {
+  if (state !== 'racing' || raceFinished) return;
+  if (!raceStarted) { raceStarted = true; raceHint.classList.add('fade'); }
+  // diminishing returns: each tap adds less as the pace nears the top,
+  // so full speed takes fast, sustained mashing to reach and hold.
+  racePower = Math.min(1, racePower + RACE.pedalGain * (1 - racePower * 0.9));
+}
+
+function updateRace(dt) {
+  const u = raceLen ? raceDist / raceLen : 0;
+  const grade = poseBikeAt(u);
+
+  // rivals ride at their own steady pace once the race is underway
+  for (const bot of bots) {
+    if (raceStarted && !raceFinished) bot.dist = Math.min(raceLen, bot.dist + bot.speed * dt);
+    poseBotAt(bot);
+  }
+
+  if (!raceStarted) { updateRaceCam(1); return; }   // idle at the start line
+
+  raceElapsed += dt;
+  racePower = Math.max(0, racePower - RACE.decay * dt);
+  const slope = Math.min(1.5, Math.max(0.35, 1 - grade * RACE.slopeK));
+  const speed = RACE.maxSpeed * racePower * slope;
+  raceDist += speed * dt;
+
+  if (bikeMixer) { bikeMixer.timeScale = 0.4 + racePower * 2.2; bikeMixer.update(dt); }
+  updateRaceCam(dt);
+
+  raceTimeEl.textContent = raceElapsed.toFixed(1);
+  raceProgressEl.textContent = Math.min(100, Math.round(u * 100)) + '%';
+  if (raceMeterFill) raceMeterFill.style.width = Math.round(racePower * 100) + '%';
+  if (raceDist >= raceLen) finishRace();
+}
+
+function raceBestKey() { return `atlas-race-best-${village.id}`; }
+function loadRaceBest() {
+  try { const v = parseFloat(localStorage.getItem(raceBestKey())); return isFinite(v) ? v : null; }
+  catch { return null; }
+}
+function saveRaceBest(t) { try { localStorage.setItem(raceBestKey(), String(t)); } catch { /* ignore */ } }
+
+function startRace() {
+  raceDist = 0; racePower = 0; raceElapsed = 0;
+  raceStarted = false; raceFinished = false;
+  const best = loadRaceBest();
+  raceBestEl.textContent = best != null ? best.toFixed(1) + 's' : '—';
+  raceTimeEl.textContent = '0.0';
+  raceProgressEl.textContent = '0%';
+  raceHint.textContent = S().raceStartHint;
+  raceHint.hidden = false;
+  raceHint.classList.remove('fade');
+  poseBikeAt(0);
+  _rcamdir.copy(_rtan);         // start already aimed down the route
+  updateRaceCam(1);             // snap camera behind the start
+  if (raceMeterFill) raceMeterFill.style.width = '0%';
+
+  // line the rivals up on the start grid with a fresh speed jitter
+  for (let i = 0; i < bots.length; i++) {
+    bots[i].dist = 0;
+    bots[i].speed = BOT_SPEEDS[i] + (Math.random() * 6 - 3);
+    poseBotAt(bots[i]);
+  }
+}
+
+function finishRace() {
+  if (raceFinished) return;
+  raceFinished = true;
+  raceDist = raceLen;
+  const t = raceElapsed;
+  const prev = loadRaceBest();
+  const isBest = prev == null || t < prev;
+  if (isBest) saveRaceBest(t);
+  raceBestEl.textContent = (isBest ? t : prev).toFixed(1) + 's';
+  // placement: how many rivals already crossed the line before you
+  const ahead = bots.filter((b) => b.dist >= raceLen).length;
+  const place = ahead + 1;
+  const total = bots.length + 1;
+  const s = S();
+  flightModalKicker.textContent = s.raceKicker;
+  flightModalTitle.textContent = `${s.raceFinishTitle} · ${place}/${total}`;
+  flightModalMsg.textContent = isBest
+    ? `${t.toFixed(1)}s — ${s.raceNewBest}`
+    : `${t.toFixed(1)}s · ${s.raceBest} ${prev.toFixed(1)}s`;
+  flightPrimary.textContent = s.raceAgain;
+  flightSecondary.textContent = s.raceDone;
+  flightPrimary.onclick = () => { flightModal.hidden = true; startRace(); };
+  flightSecondary.onclick = leaveRace;
+  flightModal.hidden = false;
+}
+
+function enterRace() {
+  if (state !== 'free') return;
+  const route = village.race?.route;
+  if (!Array.isArray(route) || route.length < 2) { showToast(S().raceNoRoute); return; }
+  raceCurve = routeCurve(route);
+  raceCurve.arcLengthDivisions = 600;
+  raceLen = raceCurve.getLength();
+  if (raceDraw.active) setDrawMode(false);
+  closeDetail(false);
+  state = 'racing';
+
+  if (!bikeObj) buildBike();
+  if (!bots.length) buildBots();
+  if (raceTrack) { raceGroup.remove(raceTrack); raceTrack.geometry.dispose(); raceTrack = null; }
+  raceTrack = buildRouteRibbon(route, { width: 30, color: 0xffcf4d, opacity: 0.45, offset: 2 });
+  if (raceTrack) raceGroup.add(raceTrack);
+  scene.add(raceGroup);
+  ambientGroup.visible = false;
+
+  controls.enabled = false;
+  hud.hidden = true;
+  pinLayer.hidden = true;
+  flyToggle.hidden = true;
+  raceToggle.hidden = true;
+  scrollHint.hidden = true;
+  moveHint.hidden = true;
+  if (raceDraw.panel) raceDraw.panel.style.display = 'none';
+  flightModal.hidden = true;
+  raceHud.hidden = false;
+  raceControls.hidden = false;
+
+  startRace();
+}
+
+function leaveRace() {
+  flightModal.hidden = true;
+  scene.remove(raceGroup);
+  ambientGroup.visible = true;
+  raceHud.hidden = true;
+  raceHint.hidden = true;
+  raceControls.hidden = true;
+  if (raceDraw.panel) raceDraw.panel.style.display = '';
+
+  state = 'free';
+  zoomT = 0; zoomGoal = 0;
+  controls.target.copy(CENTER);
+  placeCameraZoom();
+  controls.enabled = true;
+  hud.hidden = false;
+  pinLayer.hidden = false;
+  flyToggle.hidden = false;
+  raceToggle.hidden = !hasRaceRoute;
+  birdsUp();
+}
+
+raceToggle.addEventListener('click', enterRace);
+renderer.domElement.addEventListener('pointerdown', () => { if (state === 'racing') pedal(); });
+// on-screen pedal button (iPad/touch); pointerdown fires per tap for mashing
+racePedal.addEventListener('pointerdown', (e) => { e.preventDefault(); pedal(); });
+addEventListener('keydown', (e) => {
+  if (state !== 'racing') return;
+  if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); if (!e.repeat) pedal(); }
+  else if (e.key === 'Escape') { e.preventDefault(); leaveRace(); }
+});
+
 // ----- file:// guard -----
 
 function showFileWarning() {
@@ -1604,6 +2110,13 @@ renderer.setAnimationLoop(() => {
   // Flight mode owns the camera entirely; skip the map machinery.
   if (state === 'flying') {
     if (!flightPaused && !flightOver) updateFlight(dt);
+    renderer.render(scene, camera);
+    return;
+  }
+
+  // Race mode likewise owns the camera.
+  if (state === 'racing') {
+    updateRace(dt);
     renderer.render(scene, camera);
     return;
   }

@@ -58,11 +58,40 @@
   <button id="sound-toggle" class="control" type="button">Sound on</button>
 </div>
 
+<!-- Cycling race: launch button (right edge, above Fly) -->
+<button id="race-toggle" class="control" type="button" hidden>
+  <span aria-hidden="true" class="race-icon">🚲</span>
+  <span data-i18n="race">Race</span>
+</button>
+
 <!-- Falcon flight: launch button (right edge, shown while exploring) -->
 <button id="fly-toggle" class="control" type="button" hidden>
   <span aria-hidden="true" class="fly-icon">⌇</span>
   <span data-i18n="fly">Fly</span>
 </button>
+
+<!-- Cycling race HUD (time trial) + pedal hint -->
+<div id="race-hud" hidden>
+  <div class="flight-stat">
+    <span class="flight-stat-label" data-i18n="raceTime">Time</span>
+    <span id="race-time" class="flight-stat-val">0.0</span>
+  </div>
+  <div class="flight-stat">
+    <span class="flight-stat-label" data-i18n="raceProgress">Progress</span>
+    <span id="race-progress" class="flight-stat-val">0%</span>
+  </div>
+  <div class="flight-stat">
+    <span class="flight-stat-label" data-i18n="raceBest">Best</span>
+    <span id="race-best" class="flight-stat-val">—</span>
+  </div>
+</div>
+<p id="race-hint" class="hint" hidden></p>
+
+<!-- Cycling race: on-screen pace meter + pedal button (touch friendly) -->
+<div id="race-controls" hidden>
+  <div id="race-meter" aria-hidden="true"><div id="race-meter-fill"></div></div>
+  <button id="race-pedal" type="button" data-i18n="racePedal">Pedal</button>
+</div>
 
 <!-- Falcon flight: head-control toggle + webcam preview (opt-in) -->
 <button id="head-toggle" class="control" type="button" hidden>
