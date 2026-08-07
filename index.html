@@ -93,6 +93,20 @@
   <button id="race-pedal" type="button" data-i18n="racePedal">Pedal</button>
 </div>
 
+<!-- Cycling race: end-of-race leaderboard -->
+<div id="race-modal" hidden>
+  <div class="flight-dialog">
+    <p class="kicker" id="race-modal-kicker">Time trial</p>
+    <h2 id="race-modal-title">Finish!</h2>
+    <p id="race-modal-note"></p>
+    <ol id="race-board" class="race-board"></ol>
+    <div class="flight-actions">
+      <button id="race-again" class="control" type="button" data-i18n="raceAgain">Race again</button>
+      <button id="race-back" class="control" type="button" data-i18n="raceDone">Back to map</button>
+    </div>
+  </div>
+</div>
+
 <!-- Falcon flight: head-control toggle + webcam preview (opt-in) -->
 <button id="head-toggle" class="control" type="button" hidden>
   <span aria-hidden="true" class="head-icon">🦅</span>

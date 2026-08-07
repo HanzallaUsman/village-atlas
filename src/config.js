@@ -73,9 +73,9 @@ export const config = {
       // below (a flat list — no extra [ ]). Heights snap to the terrain.
       // ------------------------------------------------------
       race: {
-        bike: null,          // 'assets/models/bike.glb' once you have one
-        bikeScale: 40,       // tune so the cyclist reads from the chase cam
-        bikeRotationY: 0,    // radians — rotate if it faces the wrong way
+        bike: 'assets/models/uae-cyclist-animated.glb',
+        bikeScale: 5,        // tune so the cyclist reads from the chase cam
+        bikeRotationY: -Math.PI / 2, // -90° — turns the model to face forward
         route: [{"x":1006.4,"z":354.8},{"x":1013.4,"z":345.9},{"x":1026.7,"z":337.3},{"x":1040,"z":332.1},{"x":1056.8,"z":321.6},{"x":1077.8,"z":312.1},{"x":1090,"z":296.7},{"x":1088.3,"z":279.7},{"x":1085.1,"z":256.1},{"x":1078.9,"z":209.9},{"x":1071.9,"z":158.9},{"x":1066.6,"z":104.2},{"x":1055.6,"z":26.4},{"x":1051.4,"z":-4.7},{"x":1049.9,"z":-26.1},{"x":1060.8,"z":-33.4},{"x":1067.4,"z":-23.5},{"x":1073.9,"z":-9.6},{"x":1079.3,"z":4.3},{"x":1087.3,"z":15.6},{"x":1092,"z":24.4},{"x":1103.8,"z":14},{"x":1101.4,"z":-14.7},{"x":1098.3,"z":-53.4},{"x":1089.2,"z":-82.2},{"x":1070.2,"z":-101.1},{"x":1050.3,"z":-121.5},{"x":1037.4,"z":-136.8},{"x":1023.2,"z":-156.6},{"x":1004.6,"z":-170.7},{"x":967,"z":-193.5},{"x":929.1,"z":-214.7},{"x":901.8,"z":-245.6},{"x":861.6,"z":-285.3},{"x":845.3,"z":-308.2},{"x":843.9,"z":-341.8},{"x":829,"z":-371.7},{"x":799.9,"z":-385.5},{"x":780.1,"z":-388},{"x":760.8,"z":-411.3},{"x":743.2,"z":-435.6},{"x":725.7,"z":-463.8},{"x":709.4,"z":-497.7},{"x":702.1,"z":-518.9},{"x":660.1,"z":-546.1},{"x":648.3,"z":-571.4},{"x":624.9,"z":-594.1},{"x":583.1,"z":-609.2},{"x":550.3,"z":-617.9},{"x":527.9,"z":-630.3},{"x":494.6,"z":-658.5},{"x":470.3,"z":-658.9},{"x":456.3,"z":-650.1},{"x":458.4,"z":-630.5},{"x":463.4,"z":-614.1},{"x":469.3,"z":-606.5},{"x":480.6,"z":-602.3},{"x":485.1,"z":-600.4},{"x":503.2,"z":-602.6},{"x":516.2,"z":-605.4},{"x":523.4,"z":-609.6},{"x":532.1,"z":-617.8}],           // [{ x, z }, …] filled by the draw tool
       },
 
@@ -213,6 +213,11 @@ export const config = {
       raceDone: 'Back to map',
       raceNoRoute: 'No route set yet',
       racePedal: 'Pedal',
+      raceYou: 'You',
+      racePlaced: 'You placed',
+      raceOf: 'of',
+      raceRival1: 'Abdullah Alblooshi',   // faster rival
+      raceRival2: 'Muhammad Alsuwaidi',   // slower rival
       // How-to-steer chooser (shown when you press Fly)
       flyChooseTitle: 'How do you want to steer?',
       flyChooseMsg: 'Head steering uses your webcam — turn your head to fly, open your mouth to dive. You can switch or turn it off anytime.',
@@ -275,6 +280,11 @@ export const config = {
       raceDone: 'العودة إلى الخريطة',
       raceNoRoute: 'لم يتم تعيين مسار بعد',
       racePedal: 'دوّاسة',
+      raceYou: 'أنت',
+      racePlaced: 'مركزك',
+      raceOf: 'من',
+      raceRival1: 'عبدالله البلوشي',      // faster rival
+      raceRival2: 'محمد السويدي',        // slower rival
       // How-to-steer chooser (shown when you press Fly)
       flyChooseTitle: 'كيف تريد التوجيه؟',
       flyChooseMsg: 'يستخدم التوجيه بالرأس الكاميرا — أدر رأسك للطيران، وافتح فمك للانقضاض. يمكنك التبديل أو الإيقاف في أي وقت.',

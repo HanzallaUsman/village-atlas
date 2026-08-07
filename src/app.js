@@ -1801,9 +1801,16 @@ const raceBestEl = document.getElementById('race-best');
 const raceControls = document.getElementById('race-controls');
 const raceMeterFill = document.getElementById('race-meter-fill');
 const racePedal = document.getElementById('race-pedal');
+const raceModal = document.getElementById('race-modal');
+const raceModalKicker = document.getElementById('race-modal-kicker');
+const raceModalTitle = document.getElementById('race-modal-title');
+const raceModalNote = document.getElementById('race-modal-note');
+const raceBoard = document.getElementById('race-board');
+const raceAgainBtn = document.getElementById('race-again');
+const raceBackBtn = document.getElementById('race-back');
 
 const raceGroup = new THREE.Group();
-let bikeObj = null, bikeMixer = null, raceTrack = null;
+let bikeObj = null, raceTrack = null;
 let raceCurve = null, raceLen = 0;
 let raceDist = 0, racePower = 0, raceElapsed = 0;
 let raceStarted = false, raceFinished = false;
@@ -1818,6 +1825,7 @@ const _rcamdir = new THREE.Vector3(0, 0, 1);   // smoothed chase heading
 const BOT_COUNT = 2;
 const BOT_COLORS = [0x3aa0ff, 0xff6ba6];
 const BOT_SPEEDS = [34, 46];                   // world units/sec, varied
+const BOT_NAME_KEYS = ['raceRival2', 'raceRival1']; // slower, faster (Muhammad, Abdullah)
 const BOT_LANES = [-7, 7];                      // player rides lane 0 (center)
 const bots = [];
 const _bp = new THREE.Vector3(), _btan = new THREE.Vector3(), _bside = new THREE.Vector3();
@@ -1839,35 +1847,79 @@ function buildBikePlaceholder(color = 0xff7a1a) {
   return g;
 }
 
-function buildBike() {
-  bikeObj = buildBikePlaceholder();
-  bikeObj.rotation.order = 'YXZ';
-  raceGroup.add(bikeObj);
-  const path = village.race?.bike;
-  if (!path) return;
-  gltfLoader.load(path, (gltf) => {
-    const f = gltf.scene;
-    f.scale.setScalar(village.race?.bikeScale ?? 40);
-    f.rotation.y = village.race?.bikeRotationY ?? 0;
-    raceGroup.remove(bikeObj);
-    bikeObj = new THREE.Group();
-    bikeObj.rotation.order = 'YXZ';
-    bikeObj.add(f);
-    raceGroup.add(bikeObj);
-    if (gltf.animations?.length) {
-      bikeMixer = new THREE.AnimationMixer(f);
-      bikeMixer.clipAction(gltf.animations[0]).play();
+// A rider is a posed wrapper group; its child is either the cyclist
+// model (once loaded) or a colored box fallback. Each model clone gets
+// its own AnimationMixer so the legs pedal at that rider's cadence.
+let bikeProto = null, bikeClip = null, bikeLoading = false;
+
+function makeRider(color) {
+  const wrap = new THREE.Group();
+  wrap.rotation.order = 'YXZ';
+  if (bikeProto) {
+    const m = bikeProto.clone(true);
+    m.scale.setScalar(village.race?.bikeScale ?? 8);
+    m.rotation.y = village.race?.bikeRotationY ?? 0;
+    wrap.add(m);
+    if (bikeClip) {
+      const mixer = new THREE.AnimationMixer(m);
+      mixer.clipAction(bikeClip).play();
+      wrap.userData.mixer = mixer;
     }
-  }, undefined, (err) => console.warn('Bike model failed to load; using box', err));
+  } else {
+    wrap.add(buildBikePlaceholder(color));
+  }
+  return wrap;
+}
+
+// Load the cyclist model once, then swap every box out for a clone.
+function ensureBikeModel() {
+  if (bikeProto || bikeLoading || !village.race?.bike) return;
+  bikeLoading = true;
+  gltfLoader.load(village.race.bike, (gltf) => {
+    bikeProto = gltf.scene;
+    bikeClip = gltf.animations?.[0] ?? null;
+    bikeLoading = false;
+    rebuildRiders();
+  }, undefined, (err) => { bikeLoading = false; console.warn('Bike model failed; using boxes', err); });
+}
+
+// Advance each rider's pedal animation at a pace-based speed.
+function updateRiderAnims(dt) {
+  const pm = bikeObj && bikeObj.userData.mixer;
+  if (pm) { pm.timeScale = (raceStarted && !raceFinished) ? 0.3 + racePower * 2.2 : 0; pm.update(dt); }
+  for (const bot of bots) {
+    const bm = bot.obj && bot.obj.userData.mixer;
+    if (bm) { bm.timeScale = (raceStarted && bot.dist < raceLen) ? Math.max(0.5, bot.speed / 20) : 0; bm.update(dt); }
+  }
+}
+
+function rebuildRiders() {
+  if (bikeObj) raceGroup.remove(bikeObj);
+  bikeObj = makeRider(0xff7a1a);
+  raceGroup.add(bikeObj);
+  bots.forEach((bot, i) => {
+    raceGroup.remove(bot.obj);
+    bot.obj = makeRider(BOT_COLORS[i % BOT_COLORS.length]);
+    raceGroup.add(bot.obj);
+  });
+  if (state === 'racing') {
+    poseBikeAt(raceLen ? raceDist / raceLen : 0);
+    for (const bot of bots) poseBotAt(bot);
+  }
+}
+
+function buildBike() {
+  bikeObj = makeRider(0xff7a1a);
+  raceGroup.add(bikeObj);
 }
 
 function buildBots() {
   for (const b of bots) raceGroup.remove(b.obj);
   bots.length = 0;
   for (let i = 0; i < BOT_COUNT; i++) {
-    const obj = buildBikePlaceholder(BOT_COLORS[i % BOT_COLORS.length]);
+    const obj = makeRider(BOT_COLORS[i % BOT_COLORS.length]);
     raceGroup.add(obj);
-    bots.push({ obj, dist: 0, speed: BOT_SPEEDS[i], lane: BOT_LANES[i] });
+    bots.push({ obj, dist: 0, speed: BOT_SPEEDS[i], lane: BOT_LANES[i], nameKey: BOT_NAME_KEYS[i] });
   }
 }
 
@@ -1936,6 +1988,7 @@ function updateRace(dt) {
     if (raceStarted && !raceFinished) bot.dist = Math.min(raceLen, bot.dist + bot.speed * dt);
     poseBotAt(bot);
   }
+  updateRiderAnims(dt);
 
   if (!raceStarted) { updateRaceCam(1); return; }   // idle at the start line
 
@@ -1945,7 +1998,6 @@ function updateRace(dt) {
   const speed = RACE.maxSpeed * racePower * slope;
   raceDist += speed * dt;
 
-  if (bikeMixer) { bikeMixer.timeScale = 0.4 + racePower * 2.2; bikeMixer.update(dt); }
   updateRaceCam(dt);
 
   raceTimeEl.textContent = raceElapsed.toFixed(1);
@@ -1984,6 +2036,11 @@ function startRace() {
   }
 }
 
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 function finishRace() {
   if (raceFinished) return;
   raceFinished = true;
@@ -1993,21 +2050,37 @@ function finishRace() {
   const isBest = prev == null || t < prev;
   if (isBest) saveRaceBest(t);
   raceBestEl.textContent = (isBest ? t : prev).toFixed(1) + 's';
-  // placement: how many rivals already crossed the line before you
-  const ahead = bots.filter((b) => b.dist >= raceLen).length;
-  const place = ahead + 1;
-  const total = bots.length + 1;
+
   const s = S();
-  flightModalKicker.textContent = s.raceKicker;
-  flightModalTitle.textContent = `${s.raceFinishTitle} · ${place}/${total}`;
-  flightModalMsg.textContent = isBest
-    ? `${t.toFixed(1)}s — ${s.raceNewBest}`
-    : `${t.toFixed(1)}s · ${s.raceBest} ${prev.toFixed(1)}s`;
-  flightPrimary.textContent = s.raceAgain;
-  flightSecondary.textContent = s.raceDone;
-  flightPrimary.onclick = () => { flightModal.hidden = true; startRace(); };
-  flightSecondary.onclick = leaveRace;
-  flightModal.hidden = false;
+  // Everyone's finish time. Rivals ride at a steady pace from the start,
+  // so their time is simply the route length over their speed.
+  const rows = [{ name: s.raceYou, time: t, you: true }];
+  for (const bot of bots) rows.push({ name: s[bot.nameKey] || bot.nameKey, time: raceLen / bot.speed, you: false });
+  rows.sort((a, b) => a.time - b.time);
+
+  const place = rows.findIndex((r) => r.you) + 1;
+  const total = rows.length;
+
+  raceBoard.innerHTML = '';
+  rows.forEach((r, i) => {
+    const li = document.createElement('li');
+    if (r.you) li.className = 'you';
+    li.innerHTML =
+      `<span class="rb-pos">${i + 1}</span>` +
+      `<span class="rb-name"></span>` +
+      `<span class="rb-time">${r.time.toFixed(1)}s</span>`;
+    li.querySelector('.rb-name').textContent = r.name;
+    raceBoard.appendChild(li);
+  });
+
+  raceModalKicker.textContent = s.raceKicker;
+  raceModalTitle.textContent = s.raceFinishTitle;
+  const placed = lang === 'ar'
+    ? `${s.racePlaced} ${place} ${s.raceOf} ${total}`
+    : `${s.racePlaced} ${ordinal(place)} ${s.raceOf} ${total}`;
+  raceModalNote.textContent = isBest ? `${placed} · ${s.raceNewBest}` : placed;
+
+  raceModal.hidden = false;
 }
 
 function enterRace() {
@@ -2021,6 +2094,7 @@ function enterRace() {
   closeDetail(false);
   state = 'racing';
 
+  ensureBikeModel();            // load the cyclist model (swaps in when ready)
   if (!bikeObj) buildBike();
   if (!bots.length) buildBots();
   if (raceTrack) { raceGroup.remove(raceTrack); raceTrack.geometry.dispose(); raceTrack = null; }
@@ -2037,7 +2111,7 @@ function enterRace() {
   scrollHint.hidden = true;
   moveHint.hidden = true;
   if (raceDraw.panel) raceDraw.panel.style.display = 'none';
-  flightModal.hidden = true;
+  raceModal.hidden = true;
   raceHud.hidden = false;
   raceControls.hidden = false;
 
@@ -2045,7 +2119,7 @@ function enterRace() {
 }
 
 function leaveRace() {
-  flightModal.hidden = true;
+  raceModal.hidden = true;
   scene.remove(raceGroup);
   ambientGroup.visible = true;
   raceHud.hidden = true;
@@ -2066,6 +2140,8 @@ function leaveRace() {
 }
 
 raceToggle.addEventListener('click', enterRace);
+raceAgainBtn.addEventListener('click', () => { raceModal.hidden = true; startRace(); });
+raceBackBtn.addEventListener('click', leaveRace);
 renderer.domElement.addEventListener('pointerdown', () => { if (state === 'racing') pedal(); });
 // on-screen pedal button (iPad/touch); pointerdown fires per tap for mashing
 racePedal.addEventListener('pointerdown', (e) => { e.preventDefault(); pedal(); });

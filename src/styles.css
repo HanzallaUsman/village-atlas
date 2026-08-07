@@ -421,6 +421,46 @@ body {
 }
 #race-pedal:active { transform: translateY(1px); filter: brightness(1.12); }
 
+/* End-of-race leaderboard (reuses the flight-modal overlay + dialog) */
+#race-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s3);
+  background: rgba(32, 29, 25, .55);
+  z-index: 40;
+}
+#race-modal[hidden] { display: none; }
+#race-modal-note { margin: 0 0 var(--s2); font-size: 14px; color: var(--ink-60); }
+.race-board {
+  list-style: none;
+  margin: 0 0 var(--s3);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.race-board li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  font-size: 14.5px;
+}
+.race-board .rb-pos { font-weight: 600; color: var(--ink-60); }
+.race-board .rb-time { font-variant-numeric: tabular-nums; color: var(--ink-60); }
+.race-board li.you {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.race-board li.you .rb-pos, .race-board li.you .rb-time { color: rgba(255, 255, 255, .85); }
+
 /* Head-steer toggle — sits just under the Fly button on the right edge */
 #head-toggle {
   position: fixed;
