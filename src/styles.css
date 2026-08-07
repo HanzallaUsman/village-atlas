@@ -117,6 +117,9 @@ body {
 .control:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
 .control:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+/* snappy taps on touch: no 300ms delay, no double-tap zoom on buttons */
+button, .control, .village-row { touch-action: manipulation; }
+
 /* --------------------------------------------
    Cartouche (map title block)
    -------------------------------------------- */
@@ -326,6 +329,24 @@ body {
 #head-status[hidden],
 #flight-hud[hidden],
 #flight-modal[hidden] { display: none; }
+
+/* In-game pause / exit button, top-left (title is hidden while playing) */
+.game-pause {
+  position: fixed;
+  inset-block-start: var(--s3);
+  inset-inline-start: var(--s3);
+  z-index: 24;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.game-pause[hidden] { display: none; }
+
+/* While a mini-game runs, hide the map title + language toggle so the
+   pause button and center HUD have room (all screen sizes). */
+body.ingame .cartouche,
+body.ingame #lang-toggle { display: none; }
 
 /* Launch button — pinned to the right edge, vertically centered */
 #fly-toggle {
@@ -866,16 +887,103 @@ body {
 }
 
 /* --------------------------------------------
-   Small screens
+   Small screens (phones / tablets in portrait)
+   Tightens spacing, respects notch/home-bar safe areas, shrinks the
+   HUD so nothing overflows, and enlarges tap targets.
    -------------------------------------------- */
 
 @media (max-width: 640px) {
-  .cartouche { padding: 10px 14px; }
-  .title { font-size: 20px; }
-  #back { inset-block-start: calc(var(--s3) + 74px); }
+  :root { --s2: 12px; --s3: 14px; --s4: 22px; }
+
+  /* keep edge-anchored chrome clear of notches and the home indicator */
+  .cartouche {
+    padding: 9px 13px;
+    inset-block-start: calc(var(--s3) + env(safe-area-inset-top));
+    inset-inline-start: calc(var(--s3) + env(safe-area-inset-left));
+  }
+  .title { font-size: 19px; }
+  .kicker { font-size: 10px; }
+  #lang-toggle {
+    inset-block-start: calc(var(--s3) + env(safe-area-inset-top));
+    inset-inline-end: calc(var(--s3) + env(safe-area-inset-right));
+  }
+  #back {
+    inset-block-start: calc(var(--s3) + 70px + env(safe-area-inset-top));
+    inset-inline-start: calc(var(--s3) + env(safe-area-inset-left));
+  }
+
+  /* landing index */
+  #landing {
+    inset-block-end: calc(var(--s3) + env(safe-area-inset-bottom));
+    inset-inline-start: calc(var(--s3) + env(safe-area-inset-left));
+    width: min(400px, calc(100vw - 2 * var(--s3)));
+  }
+  .village-row { padding: 15px 14px; }        /* taller = easier to tap */
   .village-row .name { font-size: 16px; }
-  #move-hint { display: none; }
-  .pin .pin-name { display: none; }   /* markers only; tap to read */
+
+  /* bigger, easier-to-hit buttons */
+  .control { padding: 11px 14px; }
+
+  /* explore HUD hints / labels along the bottom, above the safe area */
+  .village-label {
+    inset-block-end: calc(var(--s3) + env(safe-area-inset-bottom));
+    inset-inline-start: calc(var(--s3) + env(safe-area-inset-left));
+  }
+  #sound-toggle {
+    inset-block-end: calc(var(--s3) + env(safe-area-inset-bottom));
+    inset-inline-end: calc(var(--s3) + env(safe-area-inset-right));
+  }
+  #scroll-hint { inset-block-end: calc(var(--s4) + env(safe-area-inset-bottom)); }
+  #move-hint { display: none; }               /* desktop-only gesture copy */
+  .pin .pin-name { display: none; }            /* markers only; tap to read */
+
+  /* right-edge game launch buttons: stack tighter, clear the notch side */
+  #race-toggle { inset-block-start: calc(50% - 48px); inset-inline-end: calc(var(--s3) + env(safe-area-inset-right)); }
+  #fly-toggle  { inset-inline-end: calc(var(--s3) + env(safe-area-inset-right)); }
+  #head-toggle { inset-block-start: calc(50% + 48px); inset-inline-end: calc(var(--s3) + env(safe-area-inset-right)); }
+
+  /* pause button clears the notch on the left */
+  .game-pause {
+    inset-block-start: calc(var(--s3) + env(safe-area-inset-top));
+    inset-inline-start: calc(var(--s3) + env(safe-area-inset-left));
+  }
+
+  /* compact top-center stat cards (flight + race) */
+  #flight-hud, #race-hud {
+    inset-block-start: calc(var(--s2) + env(safe-area-inset-top));
+    gap: 6px;
+  }
+  .flight-stat { min-width: 0; padding: 6px 12px; }
+  .flight-stat-label { font-size: 9px; }
+  .flight-stat-val { font-size: 18px; }
+
+  /* race pace meter + pedal button sit above the home bar */
+  #race-controls { inset-block-end: calc(var(--s3) + env(safe-area-inset-bottom)); gap: 10px; }
+  #race-pedal { padding: 15px 46px; font-size: 16px; }
+  #race-hint { inset-block-end: calc(var(--s3) + 140px + env(safe-area-inset-bottom)); width: min(92vw, 340px); }
+
+  /* webcam self-view smaller, clear of the home bar */
+  #head-cam {
+    width: 120px; height: 90px;
+    inset-block-end: calc(var(--s3) + env(safe-area-inset-bottom));
+    inset-inline-end: calc(var(--s3) + env(safe-area-inset-right));
+  }
+  #head-status { inset-block-start: calc(var(--s2) + 64px + env(safe-area-inset-top)); white-space: normal; max-width: 88vw; text-align: center; }
+
+  /* detail panel + dialogs use the full small screen */
+  #detail { width: 100%; padding: calc(var(--s3) + env(safe-area-inset-top)) var(--s3) calc(var(--s4) + env(safe-area-inset-bottom)); }
+  .flight-dialog { width: 92vw; }
+  #toast { inset-block-end: calc(var(--s4) + env(safe-area-inset-bottom)); width: max-content; max-width: 88vw; text-align: center; }
+
+  /* admin panel (dev only) clear of the home bar */
+  .admin-panel { inset-block-end: calc(var(--s3) + env(safe-area-inset-bottom)); inset-inline-start: calc(var(--s3) + env(safe-area-inset-left)); }
+}
+
+/* very narrow phones: shrink the stat cards a touch more */
+@media (max-width: 380px) {
+  .flight-stat { padding: 5px 9px; }
+  .flight-stat-val { font-size: 16px; }
+  .title { font-size: 17px; }
 }
 
 /* --------------------------------------------

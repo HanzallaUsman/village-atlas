@@ -999,6 +999,8 @@ const flightModalTitle = document.getElementById('flight-modal-title');
 const flightModalMsg = document.getElementById('flight-modal-msg');
 const flightPrimary = document.getElementById('flight-primary');
 const flightSecondary = document.getElementById('flight-secondary');
+const flightPauseBtn = document.getElementById('flight-pause');
+flightPauseBtn.addEventListener('click', pauseFlight);
 
 let flightPaused = false;
 let flightOver = false;
@@ -1298,6 +1300,7 @@ function enterFlight() {
   closeDetail(false);
   state = 'flying';
   if (!birdObj) buildBird();
+  document.body.classList.add('ingame');
   scene.add(flightGroup);
   ambientGroup.visible = false;
 
@@ -1313,6 +1316,7 @@ function enterFlight() {
   flightCrosshair.hidden = false;
   flightModal.hidden = true;
   headToggle.hidden = false;
+  flightPauseBtn.hidden = false;
   renderer.domElement.classList.add('flying');
 
   birdsDown();
@@ -1324,6 +1328,7 @@ function enterFlight() {
 }
 
 function leaveFlight() {
+  document.body.classList.remove('ingame');
   scene.remove(flightGroup);
   ambientGroup.visible = true;
   flightModal.hidden = true;
@@ -1331,6 +1336,7 @@ function leaveFlight() {
   flightCrosshair.hidden = true;
   flightHint.hidden = true;
   headToggle.hidden = true;
+  flightPauseBtn.hidden = true;
   disableHead();                 // release the webcam when leaving flight
   modalKind = null;
   renderer.domElement.classList.remove('flying');
@@ -1495,6 +1501,12 @@ async function loadFaceLandmarker() {
 
 async function enableHead() {
   if (head.active || head.loading) return;
+  // Camera access needs a secure context (HTTPS or localhost). On a
+  // plain-HTTP LAN address the browser hides mediaDevices entirely.
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    setHeadStatus(S().headInsecure);
+    return;
+  }
   head.loading = true;
   setHeadStatus(S().headLoading);
   try {
@@ -1808,12 +1820,14 @@ const raceModalNote = document.getElementById('race-modal-note');
 const raceBoard = document.getElementById('race-board');
 const raceAgainBtn = document.getElementById('race-again');
 const raceBackBtn = document.getElementById('race-back');
+const racePauseBtn = document.getElementById('race-pause');
 
 const raceGroup = new THREE.Group();
 let bikeObj = null, raceTrack = null;
 let raceCurve = null, raceLen = 0;
 let raceDist = 0, racePower = 0, raceElapsed = 0;
-let raceStarted = false, raceFinished = false;
+let raceStarted = false, raceFinished = false, racePaused = false;
+let raceModalMode = 'finish';    // 'finish' (leaderboard) or 'pause'
 
 const _rp = new THREE.Vector3(), _rpA = new THREE.Vector3();
 const _rtan = new THREE.Vector3(), _rcam = new THREE.Vector3();
@@ -1972,7 +1986,7 @@ function updateRaceCam(dt) {
 }
 
 function pedal() {
-  if (state !== 'racing' || raceFinished) return;
+  if (state !== 'racing' || raceFinished || racePaused) return;
   if (!raceStarted) { raceStarted = true; raceHint.classList.add('fade'); }
   // diminishing returns: each tap adds less as the pace nears the top,
   // so full speed takes fast, sustained mashing to reach and hold.
@@ -2073,14 +2087,38 @@ function finishRace() {
     raceBoard.appendChild(li);
   });
 
+  raceModalMode = 'finish';
+  raceBoard.hidden = false;
   raceModalKicker.textContent = s.raceKicker;
   raceModalTitle.textContent = s.raceFinishTitle;
+  raceAgainBtn.textContent = s.raceAgain;
+  raceBackBtn.textContent = s.raceDone;
   const placed = lang === 'ar'
     ? `${s.racePlaced} ${place} ${s.raceOf} ${total}`
     : `${s.racePlaced} ${ordinal(place)} ${s.raceOf} ${total}`;
   raceModalNote.textContent = isBest ? `${placed} · ${s.raceNewBest}` : placed;
 
   raceModal.hidden = false;
+}
+
+function pauseRace() {
+  if (state !== 'racing' || raceFinished || racePaused) return;
+  racePaused = true;
+  const s = S();
+  raceModalMode = 'pause';
+  raceBoard.hidden = true;         // no standings on the pause screen
+  raceBoard.innerHTML = '';
+  raceModalKicker.textContent = s.raceKicker;
+  raceModalTitle.textContent = s.racePausedTitle;
+  raceModalNote.textContent = '';
+  raceAgainBtn.textContent = s.raceResume;
+  raceBackBtn.textContent = s.raceDone;
+  raceModal.hidden = false;
+}
+
+function resumeRace() {
+  racePaused = false;
+  raceModal.hidden = true;
 }
 
 function enterRace() {
@@ -2094,6 +2132,7 @@ function enterRace() {
   closeDetail(false);
   state = 'racing';
 
+  document.body.classList.add('ingame');
   ensureBikeModel();            // load the cyclist model (swaps in when ready)
   if (!bikeObj) buildBike();
   if (!bots.length) buildBots();
@@ -2114,17 +2153,22 @@ function enterRace() {
   raceModal.hidden = true;
   raceHud.hidden = false;
   raceControls.hidden = false;
+  racePauseBtn.hidden = false;
+  racePaused = false;
 
   startRace();
 }
 
 function leaveRace() {
+  document.body.classList.remove('ingame');
   raceModal.hidden = true;
+  racePaused = false;
   scene.remove(raceGroup);
   ambientGroup.visible = true;
   raceHud.hidden = true;
   raceHint.hidden = true;
   raceControls.hidden = true;
+  racePauseBtn.hidden = true;
   if (raceDraw.panel) raceDraw.panel.style.display = '';
 
   state = 'free';
@@ -2140,15 +2184,19 @@ function leaveRace() {
 }
 
 raceToggle.addEventListener('click', enterRace);
-raceAgainBtn.addEventListener('click', () => { raceModal.hidden = true; startRace(); });
+raceAgainBtn.addEventListener('click', () => {
+  if (raceModalMode === 'pause') { resumeRace(); return; }   // "Resume"
+  raceModal.hidden = true; startRace();                       // "Race again"
+});
 raceBackBtn.addEventListener('click', leaveRace);
+racePauseBtn.addEventListener('click', pauseRace);
 renderer.domElement.addEventListener('pointerdown', () => { if (state === 'racing') pedal(); });
 // on-screen pedal button (iPad/touch); pointerdown fires per tap for mashing
 racePedal.addEventListener('pointerdown', (e) => { e.preventDefault(); pedal(); });
 addEventListener('keydown', (e) => {
   if (state !== 'racing') return;
   if (e.code === 'Space' || e.key === ' ') { e.preventDefault(); if (!e.repeat) pedal(); }
-  else if (e.key === 'Escape') { e.preventDefault(); leaveRace(); }
+  else if (e.key === 'Escape') { e.preventDefault(); if (racePaused) resumeRace(); else pauseRace(); }
 });
 
 // ----- file:// guard -----
@@ -2192,7 +2240,7 @@ renderer.setAnimationLoop(() => {
 
   // Race mode likewise owns the camera.
   if (state === 'racing') {
-    updateRace(dt);
+    if (!racePaused) updateRace(dt);
     renderer.render(scene, camera);
     return;
   }

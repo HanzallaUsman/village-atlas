@@ -14,6 +14,6 @@ class NoCacheHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
 
-with socketserver.TCPServer(("127.0.0.1", PORT), NoCacheHandler) as httpd:
-    print(f"Serving with no-cache on http://127.0.0.1:{PORT}")
+with socketserver.TCPServer(("0.0.0.0", PORT), NoCacheHandler) as httpd:
+    print(f"Serving with no-cache on http://0.0.0.0:{PORT} (reachable on your LAN)")
     httpd.serve_forever()

@@ -211,6 +211,8 @@ export const config = {
       raceNewBest: 'new best!',
       raceAgain: 'Race again',
       raceDone: 'Back to map',
+      racePausedTitle: 'Paused',
+      raceResume: 'Resume',
       raceNoRoute: 'No route set yet',
       racePedal: 'Pedal',
       raceYou: 'You',
@@ -232,6 +234,7 @@ export const config = {
       headNoFace: 'Move into frame — no face detected',
       headDenied: 'Camera blocked. Allow it in your browser to steer with your head.',
       headUnsupported: 'Head steering isn’t available on this device.',
+      headInsecure: 'Head steering needs a secure (HTTPS) or localhost connection for the camera.',
     },
     ar: {
       kicker: 'الإمارات من الأعلى',
@@ -278,6 +281,8 @@ export const config = {
       raceNewBest: 'أفضل رقم جديد!',
       raceAgain: 'سباق مرة أخرى',
       raceDone: 'العودة إلى الخريطة',
+      racePausedTitle: 'إيقاف مؤقت',
+      raceResume: 'استئناف',
       raceNoRoute: 'لم يتم تعيين مسار بعد',
       racePedal: 'دوّاسة',
       raceYou: 'أنت',
@@ -299,6 +304,7 @@ export const config = {
       headNoFace: 'ادخل ضمن الإطار — لم يتم اكتشاف وجه',
       headDenied: 'الكاميرا محظورة. اسمح بها في المتصفح للتوجيه بالرأس.',
       headUnsupported: 'التوجيه بالرأس غير متاح على هذا الجهاز.',
+      headInsecure: 'يحتاج التوجيه بالرأس إلى اتصال آمن (HTTPS) أو localhost لتشغيل الكاميرا.',
     },
   },
 };
